@@ -66,11 +66,11 @@ int main(void)
   TCCR1B |=  (1 << CS10)  |  (1 << CS12); //prescaler /1024
 
 
-  DDRB = (1 << DDB1) | (1 << DDB0) | (1 << DDB2) | (1 << DDB3); //portB1,2 output
+  DDRD = (1 << DDD4) | (1 << DDD5) | (1 << DDD6) | (1 << DDD7); //portB1,2 output
   
-  PCICR  |= (1 << PCIE1); //enable pin change int1
-  PCMSK1 |= (1 << PCINT8) | (1 << PCINT9);
-  PORTC  |= (1 << PINC0)  | (1 << PINC1); //active pull-up
+  PCICR  |= (1 << PCIE0); //enable pin change int0
+  PCMSK0 |= (1 << PCINT0) | (1 << PCINT1);
+  PORTB  |= (1 << PINB0)  | (1 << PINB1); //activate pull-up
 
   sei();
 
@@ -89,14 +89,14 @@ int main(void)
     new_button2_pressed = button2_pressed;
     new_button_pressed  = button_pressed;
 
-    ds3231_read_clock(&myClock);
-    printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
-    _delay_ms(1000);
+    // ds3231_read_clock(&myClock);
+    // printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
+    // _delay_ms(1000);
 
     if(current_state == DISPLAY)
     {
-      PORTB |=  (1 << PIND2);
-      PORTB &= ~(1 << PIND3);
+      PORTD |=  (1 << PIND5);
+      PORTD &= ~(1 << PIND4);
 
       if(new_button_pressed)
       {
@@ -106,8 +106,8 @@ int main(void)
     }
     else //SET_CLOCK state
     {
-      PORTB &= ~(1 << PIND2);
-      PORTB |=  (1 << PIND3);
+      PORTD &= ~(1 << PIND5);
+      PORTD |=  (1 << PIND4);
 
       if(!timer_initialised)                          init_timer(TIME_QUIT_SET_CLK);
       if(new_button1_pressed || new_button2_pressed)  stop_timer();
@@ -117,29 +117,29 @@ int main(void)
   return 0;
 }
 
-ISR(PCINT1_vect)
+ISR(PCINT0_vect)
 {
   stop_timer();
 
-  if(!(PINC & (1 << PINC0)))
+  if(!(PINB & (1 << PINB0)))
   {
-    PORTB |= (1 << PINB0);
+    PORTD |= (1 << PIND7);
     button1_pressed = 1;
   }
   else
   {
-    PORTB &= ~(1 << PINB0);
+    PORTD &= ~(1 << PIND7);
     button1_pressed = 0;
   }
 
-  if(!(PINC & (1 << PINC1)))
+  if(!(PINB & (1 << PINB1)))
   {
-    PORTB |= (1 << PINB1);
+    PORTD |= (1 << PIND6);
     button2_pressed = 1;
   }
   else
   {
-    PORTB &= ~(1 << PINB1);
+    PORTD &= ~(1 << PIND6);
     button2_pressed = 0;
   }
 
