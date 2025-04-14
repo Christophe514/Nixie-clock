@@ -23,6 +23,8 @@ static uint8_t button_pressed = 0;
 
 static uint8_t timer_initialised = 0;
 
+static uint8_t read_time = 0;
+
 void init_timer(uint8_t seconds);
 void stop_timer(void);
 
@@ -61,17 +63,27 @@ int main(void)
   uint8_t new_button2_pressed = 0;
   uint8_t new_button_pressed  = 0;
 
+  uint8_t add_hour = 0;
+  uint8_t add_minute = 0;
+  
+  //init RTC
+  struct ds3231_clock_t myClock = { 0 };
+  struct ds3231_control_t control_register = {.intcn = 0, .rs1 = 0, .rs2 = 0, .bbsqw = 1, .neg_eosc = 0};
+  ds3231_write_control(&control_register);
+  PORTD |= (1 << PIND2); //activate pull-up
+  EICRA |= (1 << ISC01);
+  EIMSK |= (1 << INT0);
+
   TCCR1A &= ~(1 << WGM11) & ~(1 << WGM10); //nomral mode
   TCCR1B &= ~(1 << WGM13) & ~(1 << WGM12);
   TCCR1B |=  (1 << CS10)  |  (1 << CS12); //prescaler /1024
-
-
-  DDRD = (1 << DDD4) | (1 << DDD5) | (1 << DDD6) | (1 << DDD7); //portB1,2 output
   
   PCICR  |= (1 << PCIE0); //enable pin change int0
   PCMSK0 |= (1 << PCINT0) | (1 << PCINT1);
   PORTB  |= (1 << PINB0)  | (1 << PINB1); //activate pull-up
 
+  DDRD = (1 << DDD4) | (1 << DDD5) | (1 << DDD6) | (1 << DDD7) | (1 << DDD3) ; //portD4.5.6.7 output
+  
   sei();
 
   // Initialisation de l'USART pour le port série
@@ -80,18 +92,32 @@ int main(void)
   // Rediriger stdout vers le port série
   fdevopen(&serial_putchar, 0);
 
-
-  struct ds3231_clock_t myClock = { 0 };
-  printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
   while (1)
   {
     new_button1_pressed = button1_pressed;
     new_button2_pressed = button2_pressed;
     new_button_pressed  = button_pressed;
 
-    // ds3231_read_clock(&myClock);
-    // printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
-    // _delay_ms(1000);
+    if(read_time)
+    {
+        read_time = 0;
+        PORTD ^= (1 << PIND3);
+        
+        if(add_hour)
+        {
+            ++myClock.hours;
+            ds3231_write_clock(&myClock);
+        }
+        if(add_minute)
+        {
+            ++myClock.minutes;
+            ds3231_write_clock(&myClock);
+        }
+        ds3231_read_clock(&myClock);
+        printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
+        add_hour = 0;
+        add_minute = 0;
+    }
 
     if(current_state == DISPLAY)
     {
@@ -108,6 +134,8 @@ int main(void)
     {
       PORTD &= ~(1 << PIND5);
       PORTD |=  (1 << PIND4);
+      if(new_button1_pressed) add_hour = 1;
+      if(new_button2_pressed) add_minute = 1;
 
       if(!timer_initialised)                          init_timer(TIME_QUIT_SET_CLK);
       if(new_button1_pressed || new_button2_pressed)  stop_timer();
@@ -158,6 +186,11 @@ ISR(TIMER1_COMPA_vect)
   {
     current_state = DISPLAY;
   }
+}
+
+ISR(INT0_vect)
+{
+    read_time = 1;
 }
 
 void init_timer(uint8_t seconds)
