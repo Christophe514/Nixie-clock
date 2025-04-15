@@ -20,6 +20,8 @@ enum State
 
 enum State current_state = DISPLAY;
 
+static uint8_t button1_active  = 0;
+static uint8_t button2_active  = 0;
 static uint8_t button1_pressed = 0;
 static uint8_t button2_pressed = 0;
 static uint8_t buttons_pressed = 0;
@@ -30,8 +32,6 @@ static uint8_t read_time = 0;
 
 void init_timer(uint8_t seconds);
 void stop_timer(void);
-
-void check_time_format(struct ds3231_clock_t *clock);
 
 // Redirection de stdout vers le port série
 int serial_putchar(char c, FILE *stream) {
@@ -67,9 +67,6 @@ int main(void)
   uint8_t new_button1_pressed = 0;
   uint8_t new_button2_pressed = 0;
   uint8_t new_buttons_pressed = 0;
-
-//   uint8_t button1_first_press = 0;
-//   uint8_t button2_first_press = 0;
 
   uint8_t add_hour = 0;
   uint8_t add_minute = 0;
@@ -113,20 +110,24 @@ int main(void)
         ds3231_read_clock(&myClock);
         printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
     }
-    if(add_hour)
+    if(add_hour && new_button1_pressed && button1_active)
     {
         add_hour = 0;
+        button1_active = 0;
         ++myClock.hours;
+        myClock.seconds = 0;
         if(myClock.hours >= HOURS_IN_DAY) myClock.hours -= HOURS_IN_DAY;
         ds3231_write_clock(&myClock);
         ds3231_read_clock(&myClock);
 
         printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
     }
-    if(add_minute)
+    if(add_minute && new_button2_pressed && button2_active)
     {
         add_minute = 0;
+        button2_active = 0;
         ++myClock.minutes;
+        myClock.seconds = 0;
         if(myClock.minutes >= MINUTES_IN_HOUR) myClock.minutes -= MINUTES_IN_HOUR;
         ds3231_write_clock(&myClock);
         ds3231_read_clock(&myClock);
@@ -148,12 +149,12 @@ int main(void)
     {
       PORTD &= ~(1 << PIND5);
       PORTD |=  (1 << PIND4);
-      if(new_button1_pressed)
-      {
-        add_hour = 1;
-    
-      } 
+
+      if(new_button1_pressed) add_hour = 1;
+      else button1_active = 1;
+
       if(new_button2_pressed) add_minute = 1;
+      else button2_active = 1;
 
       if(!timer_initialised)                          init_timer(TIME_QUIT_SET_CLK);
       if(new_button1_pressed || new_button2_pressed)  stop_timer();
@@ -161,13 +162,6 @@ int main(void)
   }
 
   return 0;
-}
-
-void check_time_format(struct ds3231_clock_t *clock)
-{
-    if(clock->hours >= 24)  clock->hours = clock->hours - 24;
-    if(clock->minutes >= 60)    clock->minutes = clock->minutes - 60;
-    ds3231_write_clock(&clock);
 }
 
 ISR(PCINT0_vect)
