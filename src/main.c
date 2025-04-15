@@ -9,6 +9,9 @@
 #define HOLD_TIME_SET_CLK 2 //seconds
 #define TIME_QUIT_SET_CLK 4 //seconds
 
+#define HOURS_IN_DAY 24
+#define MINUTES_IN_HOUR 60
+
 enum State
 {
   DISPLAY,
@@ -19,7 +22,7 @@ enum State current_state = DISPLAY;
 
 static uint8_t button1_pressed = 0;
 static uint8_t button2_pressed = 0;
-static uint8_t button_pressed = 0;
+static uint8_t buttons_pressed = 0;
 
 static uint8_t timer_initialised = 0;
 
@@ -27,6 +30,8 @@ static uint8_t read_time = 0;
 
 void init_timer(uint8_t seconds);
 void stop_timer(void);
+
+void check_time_format(struct ds3231_clock_t *clock);
 
 // Redirection de stdout vers le port série
 int serial_putchar(char c, FILE *stream) {
@@ -61,7 +66,10 @@ int main(void)
 {
   uint8_t new_button1_pressed = 0;
   uint8_t new_button2_pressed = 0;
-  uint8_t new_button_pressed  = 0;
+  uint8_t new_buttons_pressed = 0;
+
+//   uint8_t button1_first_press = 0;
+//   uint8_t button2_first_press = 0;
 
   uint8_t add_hour = 0;
   uint8_t add_minute = 0;
@@ -82,7 +90,7 @@ int main(void)
   PCMSK0 |= (1 << PCINT0) | (1 << PCINT1);
   PORTB  |= (1 << PINB0)  | (1 << PINB1); //activate pull-up
 
-  DDRD = (1 << DDD4) | (1 << DDD5) | (1 << DDD6) | (1 << DDD7) | (1 << DDD3) ; //portD4.5.6.7 output
+  DDRD = (1 << DDD4) | (1 << DDD5) | (1 << DDD6) | (1 << DDD7); //portD4.5.6.7 output
   
   sei();
 
@@ -96,27 +104,33 @@ int main(void)
   {
     new_button1_pressed = button1_pressed;
     new_button2_pressed = button2_pressed;
-    new_button_pressed  = button_pressed;
+    new_buttons_pressed = buttons_pressed;
 
     if(read_time)
     {
         read_time = 0;
-        PORTD ^= (1 << PIND3);
-        
-        if(add_hour)
-        {
-            ++myClock.hours;
-            ds3231_write_clock(&myClock);
-        }
-        if(add_minute)
-        {
-            ++myClock.minutes;
-            ds3231_write_clock(&myClock);
-        }
+
         ds3231_read_clock(&myClock);
         printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
+    }
+    if(add_hour)
+    {
         add_hour = 0;
+        ++myClock.hours;
+        if(myClock.hours >= HOURS_IN_DAY) myClock.hours -= HOURS_IN_DAY;
+        ds3231_write_clock(&myClock);
+        ds3231_read_clock(&myClock);
+
+        printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
+    }
+    if(add_minute)
+    {
         add_minute = 0;
+        ++myClock.minutes;
+        if(myClock.minutes >= MINUTES_IN_HOUR) myClock.minutes -= MINUTES_IN_HOUR;
+        ds3231_write_clock(&myClock);
+        ds3231_read_clock(&myClock);
+        printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
     }
 
     if(current_state == DISPLAY)
@@ -124,7 +138,7 @@ int main(void)
       PORTD |=  (1 << PIND5);
       PORTD &= ~(1 << PIND4);
 
-      if(new_button_pressed)
+      if(new_buttons_pressed)
       {
         if(!timer_initialised)  init_timer(HOLD_TIME_SET_CLK);
       }
@@ -134,7 +148,11 @@ int main(void)
     {
       PORTD &= ~(1 << PIND5);
       PORTD |=  (1 << PIND4);
-      if(new_button1_pressed) add_hour = 1;
+      if(new_button1_pressed)
+      {
+        add_hour = 1;
+    
+      } 
       if(new_button2_pressed) add_minute = 1;
 
       if(!timer_initialised)                          init_timer(TIME_QUIT_SET_CLK);
@@ -143,6 +161,13 @@ int main(void)
   }
 
   return 0;
+}
+
+void check_time_format(struct ds3231_clock_t *clock)
+{
+    if(clock->hours >= 24)  clock->hours = clock->hours - 24;
+    if(clock->minutes >= 60)    clock->minutes = clock->minutes - 60;
+    ds3231_write_clock(&clock);
 }
 
 ISR(PCINT0_vect)
@@ -171,14 +196,14 @@ ISR(PCINT0_vect)
     button2_pressed = 0;
   }
 
-  if(button1_pressed && button2_pressed) button_pressed = 1;
-  else                                   button_pressed = 0;
+  if(button1_pressed && button2_pressed) buttons_pressed = 1;
+  else                                   buttons_pressed = 0;
 }
 
 ISR(TIMER1_COMPA_vect)
 {
   stop_timer();
-  if(button_pressed && (current_state == DISPLAY))
+  if(buttons_pressed && (current_state == DISPLAY))
   {
     current_state = SET_CLOCK;
   }
