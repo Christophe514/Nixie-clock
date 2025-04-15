@@ -18,8 +18,9 @@ enum State
   SET_CLOCK
 };
 
-enum State current_state = DISPLAY;
+static enum State current_state = DISPLAY;
 
+//bool
 static uint8_t button1_active  = 0;
 static uint8_t button2_active  = 0;
 static uint8_t button1_pressed = 0;
@@ -29,6 +30,10 @@ static uint8_t buttons_pressed = 0;
 static uint8_t timer_initialised = 0;
 
 static uint8_t read_time = 0;
+
+void init_RTC(struct ds3231_control_t *ctrl_reg);
+
+void init_board(void);
 
 void init_timer(uint8_t seconds);
 void stop_timer(void);
@@ -70,24 +75,13 @@ int main(void)
 
   uint8_t add_hour = 0;
   uint8_t add_minute = 0;
-  
-  //init RTC
-  struct ds3231_clock_t myClock = { 0 };
-  struct ds3231_control_t control_register = {.intcn = 0, .rs1 = 0, .rs2 = 0, .bbsqw = 1, .neg_eosc = 0};
-  ds3231_write_control(&control_register);
-  PORTD |= (1 << PIND2); //activate pull-up
-  EICRA |= (1 << ISC01);
-  EIMSK |= (1 << INT0);
 
-  TCCR1A &= ~(1 << WGM11) & ~(1 << WGM10); //nomral mode
-  TCCR1B &= ~(1 << WGM13) & ~(1 << WGM12);
-  TCCR1B |=  (1 << CS10)  |  (1 << CS12); //prescaler /1024
-  
-  PCICR  |= (1 << PCIE0); //enable pin change int0
-  PCMSK0 |= (1 << PCINT0) | (1 << PCINT1);
-  PORTB  |= (1 << PINB0)  | (1 << PINB1); //activate pull-up
+  struct ds3231_clock_t my_clock = {0};
+  struct ds3231_control_t control_register = {0};
 
-  DDRD = (1 << DDD4) | (1 << DDD5) | (1 << DDD6) | (1 << DDD7); //portD4.5.6.7 output
+  init_RTC(&control_register);
+
+  init_board();
   
   sei();
 
@@ -107,31 +101,34 @@ int main(void)
     {
         read_time = 0;
 
-        ds3231_read_clock(&myClock);
-        printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
+        ds3231_read_clock(&my_clock);
+        printf("Il est %2.2i:%2.2i:%2.2i \n", my_clock.hours, my_clock.minutes, my_clock.seconds);
     }
     if(add_hour && new_button1_pressed && button1_active)
     {
         add_hour = 0;
         button1_active = 0;
-        ++myClock.hours;
-        myClock.seconds = 0;
-        if(myClock.hours >= HOURS_IN_DAY) myClock.hours -= HOURS_IN_DAY;
-        ds3231_write_clock(&myClock);
-        ds3231_read_clock(&myClock);
 
-        printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
+        my_clock.seconds = 0;
+        ++my_clock.hours;
+        if(my_clock.hours >= HOURS_IN_DAY) my_clock.hours -= HOURS_IN_DAY;
+
+        ds3231_write_clock(&my_clock);
+        ds3231_read_clock(&my_clock);
+        printf("Il est %2.2i:%2.2i:%2.2i \n", my_clock.hours, my_clock.minutes, my_clock.seconds);
     }
     if(add_minute && new_button2_pressed && button2_active)
     {
         add_minute = 0;
         button2_active = 0;
-        ++myClock.minutes;
-        myClock.seconds = 0;
-        if(myClock.minutes >= MINUTES_IN_HOUR) myClock.minutes -= MINUTES_IN_HOUR;
-        ds3231_write_clock(&myClock);
-        ds3231_read_clock(&myClock);
-        printf("Il est %2.2i:%2.2i:%2.2i \n", myClock.hours, myClock.minutes, myClock.seconds);
+
+        my_clock.seconds = 0;
+        ++my_clock.minutes;
+        if(my_clock.minutes >= MINUTES_IN_HOUR) my_clock.minutes -= MINUTES_IN_HOUR;
+
+        ds3231_write_clock(&my_clock);
+        ds3231_read_clock(&my_clock);
+        printf("Il est %2.2i:%2.2i:%2.2i \n", my_clock.hours, my_clock.minutes, my_clock.seconds);
     }
 
     if(current_state == DISPLAY)
@@ -162,6 +159,57 @@ int main(void)
   }
 
   return 0;
+}
+
+
+/*
+ * Initialisation of the RTC module
+ * and RTC related features.
+ * Set the control register to allow
+ * oscillation when using battery.
+ * Enable interrupt truggered by SQW.
+ */ 
+void init_RTC(struct ds3231_control_t *ctrl_reg)
+{
+    ctrl_reg->intcn = 0;
+    ctrl_reg->rs1 = 0;
+    ctrl_reg->rs2 = 0;
+    ctrl_reg->bbsqw = 0;
+    ctrl_reg->neg_eosc = 0;
+    ds3231_write_control(&ctrl_reg);
+
+    //SQW 1Hz
+    PORTD |= (1 << PIND2);            //activate pull-up
+    EICRA |= (1 << ISC01);
+    EIMSK |= (1 << INT0);
+}
+
+void init_board(void)
+{
+    TCCR1A &= ~(1 << WGM11) & ~(1 << WGM10); //nomral mode
+    TCCR1B &= ~(1 << WGM13) & ~(1 << WGM12);
+    TCCR1B |=  (1 << CS10)  |  (1 << CS12); //prescaler /1024
+    
+    PCICR  |= (1 << PCIE0); //enable pin change int0
+    PCMSK0 |= (1 << PCINT0) | (1 << PCINT1);
+    PORTB  |= (1 << PINB0)  | (1 << PINB1); //activate pull-up
+  
+    DDRD = (1 << DDD4) | (1 << DDD5) | (1 << DDD6) | (1 << DDD7); //portD4.5.6.7 output
+}
+
+void init_timer(uint8_t seconds)
+{
+  timer_initialised = 1;
+  OCR1A = (uint16_t) seconds * F_CPU / PRESCALER;
+  TCNT1 = 0;
+  TIMSK1 |= (1 << OCIE1A); //enable oc int
+}
+
+void stop_timer(void)
+{
+  timer_initialised = 0;
+  TIFR1  |=  (1 << OCF1A);
+  TIMSK1 &= ~(1 << OCIE1A);
 }
 
 ISR(PCINT0_vect)
@@ -210,19 +258,4 @@ ISR(TIMER1_COMPA_vect)
 ISR(INT0_vect)
 {
     read_time = 1;
-}
-
-void init_timer(uint8_t seconds)
-{
-  timer_initialised = 1;
-  OCR1A = (uint16_t) seconds * F_CPU / PRESCALER;
-  TCNT1 = 0;
-  TIMSK1 |= (1 << OCIE1A); //enable oc int
-}
-
-void stop_timer(void)
-{
-  timer_initialised = 0;
-  TIFR1  |=  (1 << OCF1A);
-  TIMSK1 &= ~(1 << OCIE1A);
 }
