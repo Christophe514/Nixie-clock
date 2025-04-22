@@ -29,7 +29,9 @@ static uint8_t buttons_pressed = 0;
 
 static uint8_t timer_initialised = 0;
 
-static uint8_t read_time = 0;
+static uint8_t display_time = 0;
+
+static struct ds3231_clock_t my_clock = {0};
 
 void init_RTC(struct ds3231_control_t *ctrl_reg);
 
@@ -37,6 +39,8 @@ void init_board(void);
 
 void init_timer(uint8_t seconds);
 void stop_timer(void);
+
+void display_time_nixie(void);
 
 // Redirection de stdout vers le port série
 int serial_putchar(char c, FILE *stream) {
@@ -76,9 +80,7 @@ int main(void)
   uint8_t add_hour = 0;
   uint8_t add_minute = 0;
 
-  struct ds3231_clock_t my_clock = {0};
   struct ds3231_control_t control_register = {0};
-
   init_RTC(&control_register);
 
   init_board();
@@ -87,7 +89,6 @@ int main(void)
 
   // Initialisation de l'USART pour le port série
   uart_init();
-
   // Rediriger stdout vers le port série
   fdevopen(&serial_putchar, 0);
 
@@ -97,13 +98,8 @@ int main(void)
     new_button2_pressed = button2_pressed;
     new_buttons_pressed = buttons_pressed;
 
-    if(read_time)
-    {
-        read_time = 0;
+    if(display_time) display_time_nixie();
 
-        ds3231_read_clock(&my_clock);
-        printf("Il est %2.2i:%2.2i:%2.2i \n", my_clock.hours, my_clock.minutes, my_clock.seconds);
-    }
     if(add_hour && new_button1_pressed && button1_active)
     {
         add_hour = 0;
@@ -113,9 +109,8 @@ int main(void)
         ++my_clock.hours;
         if(my_clock.hours >= HOURS_IN_DAY) my_clock.hours -= HOURS_IN_DAY;
 
-        ds3231_write_clock(&my_clock);
-        ds3231_read_clock(&my_clock);
-        printf("Il est %2.2i:%2.2i:%2.2i \n", my_clock.hours, my_clock.minutes, my_clock.seconds);
+        if(ds3231_write_clock(&my_clock)) printf("error write clock \n");
+        display_time_nixie();
     }
     if(add_minute && new_button2_pressed && button2_active)
     {
@@ -126,15 +121,17 @@ int main(void)
         ++my_clock.minutes;
         if(my_clock.minutes >= MINUTES_IN_HOUR) my_clock.minutes -= MINUTES_IN_HOUR;
 
-        ds3231_write_clock(&my_clock);
-        ds3231_read_clock(&my_clock);
-        printf("Il est %2.2i:%2.2i:%2.2i \n", my_clock.hours, my_clock.minutes, my_clock.seconds);
+        if(ds3231_write_clock(&my_clock)) printf("error write clock \n");
+        display_time_nixie();
     }
 
     if(current_state == DISPLAY)
     {
       PORTD |=  (1 << PIND5);
       PORTD &= ~(1 << PIND4);
+
+      button1_active = 0;
+      button2_active = 0;
 
       if(new_buttons_pressed)
       {
@@ -163,10 +160,8 @@ int main(void)
 
 
 /*
- * Initialisation of the RTC module
- * and RTC related features.
- * Set the control register to allow
- * oscillation when using battery.
+ * Initialisation of the RTC module and RTC related features.
+ * Set the control register to allow oscillation when using battery.
  * Enable interrupt truggered by SQW.
  */ 
 void init_RTC(struct ds3231_control_t *ctrl_reg)
@@ -174,9 +169,10 @@ void init_RTC(struct ds3231_control_t *ctrl_reg)
     ctrl_reg->intcn = 0;
     ctrl_reg->rs1 = 0;
     ctrl_reg->rs2 = 0;
-    ctrl_reg->bbsqw = 0;
+    ctrl_reg->bbsqw = 1;
     ctrl_reg->neg_eosc = 0;
-    ds3231_write_control(&ctrl_reg);
+
+    if(ds3231_write_control(ctrl_reg)) printf("error write ctrl reg \n");
 
     //SQW 1Hz
     PORTD |= (1 << PIND2);            //activate pull-up
@@ -210,6 +206,13 @@ void stop_timer(void)
   timer_initialised = 0;
   TIFR1  |=  (1 << OCF1A);
   TIMSK1 &= ~(1 << OCIE1A);
+}
+
+void display_time_nixie(void)
+{
+  display_time = 0;
+  if(ds3231_read_clock(&my_clock)) printf("error read clock \n");
+  printf("Il est %2.2i:%2.2i:%2.2i \n", my_clock.hours, my_clock.minutes, my_clock.seconds);
 }
 
 ISR(PCINT0_vect)
@@ -257,5 +260,5 @@ ISR(TIMER1_COMPA_vect)
 
 ISR(INT0_vect)
 {
-    read_time = 1;
+  display_time = 1;
 }
