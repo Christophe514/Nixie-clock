@@ -1,8 +1,13 @@
 # Nixie-clock
-## Motivation
+## Idea
+
+## Fonctionnality
 
 
+## Hardware design
 
+
+## Code
 
 
 
